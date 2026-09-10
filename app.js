@@ -459,12 +459,9 @@
       if (d.error) { addError(d.error); return; }
       d.__q = q;
       addAnswer(d);
-      // Уведомление вам уходит по каждому вопросу, независимо от почты клиента.
-      notify({
-        question: q, answer: d.answer || d.output || '', branch: d.branch,
-        source: d.source_summary, channel: 'сайт', confidence: d.confidence,
-        session: sessionId, reply_to: ''
-      });
+      // Письмо вам отправляет сам процесс — и только по веткам Б и В.
+      // Раньше здесь был повторный вызов, из-за которого на каждый вопрос
+      // запускался второй прогон с агентом и приходило два письма.
     }).catch(function () {
       pending.remove();
       addError('Ассистент недоступен. Попробуйте в Telegram.');
