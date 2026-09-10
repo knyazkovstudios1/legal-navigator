@@ -316,6 +316,34 @@ section.alt{background:linear-gradient(180deg,transparent,var(--deep) 12%,var(--
 .final .cta{justify-content:center;margin-top:30px}
 footer{border-top:1px solid var(--line);padding:30px 0 54px;font-size:13px;color:var(--faint)}
 footer .wrap{display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between}
+
+/* ---------- картотека заявок ---------- */
+#crm-root{margin-top:26px;display:flex;flex-direction:column;gap:14px}
+.crm-head{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.crm-head .crm-count{color:var(--mute);font-size:13px;font-variant-numeric:tabular-nums;flex:1 1 auto}
+.crm-btn{background:none;border:1px solid var(--line2);color:var(--soft);border-radius:9px;padding:7px 14px;font:inherit;font-size:13px;cursor:pointer}
+.crm-btn:hover{border-color:var(--ask);color:var(--ink)}
+.crm-list{display:grid;gap:12px}
+.crm-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;display:flex;flex-direction:column;gap:9px}
+.crm-top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.crm-id{margin-left:auto;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+.crm-q{margin:0;font-weight:600;font-size:15px;line-height:1.45;color:var(--ink)}
+.crm-a{margin:0;font-size:14px;line-height:1.6;color:var(--soft)}
+.crm-src{margin:0;font-size:12.5px;color:var(--mute)}
+.crm-acts{display:flex;gap:8px;flex-wrap:wrap}
+.crm-acts button{flex:1 1 90px;background:none;border:1px solid var(--line2);color:var(--mute);border-radius:9px;padding:8px 6px;font:inherit;font-size:13px;cursor:pointer}
+.crm-acts button:hover{border-color:var(--ask);color:var(--ink)}
+.crm-acts button.on{background:var(--ask-deep);border-color:var(--ask-deep);color:#fff;font-weight:600}
+.pill{font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.pill.new{background:rgba(123,165,242,.14);color:var(--ask)}
+.pill.work{background:var(--b-bg);color:var(--b)}
+.pill.done{background:var(--a-bg);color:var(--a)}
+.crm-empty{color:var(--mute);font-size:14.5px;line-height:1.65;margin:0}
+.crm-gate{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.crm-gate input{flex:1 1 200px;min-width:0;background:var(--raised);border:1px solid var(--line2);border-radius:10px;padding:11px 14px;color:var(--ink);font:inherit;font-size:14px}
+.crm-gate button{background:var(--ask-deep);border:0;color:#fff;border-radius:10px;padding:11px 22px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+footer a{color:var(--mute);text-decoration:none;border-bottom:1px solid var(--line2)}
+footer a:hover{color:var(--ink)}
 </style>
 <noscript><style>.rev{opacity:1;transform:none}</style></noscript>
 </head>
@@ -461,10 +489,19 @@ footer .wrap{display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between}
   </div>
 </section>
 
+<section id="crm" class="alt" hidden>
+  <div class="wrap">
+    <h2>Картотека заявок</h2>
+    <p class="lead">Каждый вопрос к ассистенту попадает сюда: что спросили, что он ответил, какая ветка сработала и на каком пункте документа основан ответ. Статус переключается здесь же.</p>
+    <p class="lead">Картотека закрыта ключом: в заявках есть почтовые адреса клиентов, а страница публичная.</p>
+    <div id="crm-root"></div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <span>Юридический навигатор — демонстрационный проект автоматизации на n8n</span>
-    <span>Источник знаний: корпоративное руководство ред. 2.1</span>
+    <span>Источник знаний: корпоративное руководство ред. 2.1 · <a href="#crm">Картотека заявок</a></span>
   </div>
 </footer>
 

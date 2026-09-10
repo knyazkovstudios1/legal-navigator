@@ -501,3 +501,128 @@
 
   if (modeLabel) modeLabel.textContent = CHAT_URL ? 'живой' : 'демо';
 })();
+
+/* ================================================================
+   КАРТОТЕКА ЗАЯВОК
+   ================================================================
+   Заявки хранятся в самом процессе n8n. Здесь только показ и смена статуса.
+
+   Ключ доступа не зашит в страницу: она публичная, а в заявках лежат вопросы
+   и почтовые адреса клиентов. Ключ вводится один раз и хранится в браузере
+   того, кто его ввёл.
+
+   Секция открывается по адресу с #crm — ссылка есть в подвале. */
+(function () {
+  'use strict';
+
+  var CRM_URL = 'https://n8n-production-5b17.up.railway.app/webhook/crm-7f3a91c2';
+  var STATUS = [
+    { key: 'new', label: 'Новая' },
+    { key: 'work', label: 'В работе' },
+    { key: 'done', label: 'Закрыта' }
+  ];
+
+  var section = document.getElementById('crm');
+  var root = document.getElementById('crm-root');
+  if (!section || !root) return;
+
+  function esc(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function key() { try { return localStorage.getItem('crm-key') || ''; } catch (e) { return ''; } }
+  function setKey(v) { try { localStorage.setItem('crm-key', v); } catch (e) {} }
+
+  function lock(msg) {
+    root.innerHTML = '<p class="crm-empty">' + esc(msg || 'Введите ключ доступа.') + '</p>' +
+      '<div class="crm-gate"><input type="password" id="crm-key" placeholder="Ключ доступа" autocomplete="off">' +
+      '<button type="button" id="crm-unlock">Открыть</button></div>';
+  }
+
+  function card(r) {
+    var st = STATUS.filter(function (s) { return s.key === r.status; })[0] || STATUS[0];
+    var acts = STATUS.map(function (s) {
+      return '<button type="button" data-id="' + esc(r.id) + '" data-status="' + s.key + '"' +
+        (s.key === r.status ? ' class="on"' : '') + '>' + s.label + '</button>';
+    }).join('');
+    return '<article class="crm-card">' +
+      '<div class="crm-top"><span class="pill ' + st.key + '">' + st.label + '</span>' +
+      '<span class="crm-id">№ ' + esc(r.id) + ' · ' + esc(r.channel || '') + '</span></div>' +
+      '<p class="crm-q">' + esc(r.question) + '</p>' +
+      '<p class="crm-a">' + esc(r.answer) + '</p>' +
+      '<p class="crm-src">' + esc(r.branch_label || '') +
+        (r.source ? ' · ' + esc(r.source) : '') +
+        (r.reply_to ? ' · почта клиента: ' + esc(r.reply_to) : '') + '</p>' +
+      '<div class="crm-acts">' + acts + '</div>' +
+      '</article>';
+  }
+
+  function render(d) {
+    if (!d.items.length) {
+      root.innerHTML = '<p class="crm-empty">Пока пусто. Задайте вопрос ассистенту выше — заявка появится здесь.</p>';
+      return;
+    }
+    root.innerHTML =
+      '<div class="crm-head"><span class="crm-count">Всего ' + d.total +
+        ' · новых ' + d.counts.new + ' · в работе ' + d.counts.work + ' · закрыто ' + d.counts.done + '</span>' +
+        '<button type="button" class="crm-btn" id="crm-reload">Обновить</button></div>' +
+      '<div class="crm-list">' + d.items.map(card).join('') + '</div>';
+  }
+
+  function load(change) {
+    var k = key();
+    if (!k) { lock('Картотека закрыта: в заявках есть адреса клиентов.'); return; }
+
+    // Только GET: у вебхука объявлены оба метода, и в этом режиме n8n отвечает
+    // через Respond-ноду лишь на GET — POST возвращает пустое тело.
+    var url = CRM_URL + '?key=' + encodeURIComponent(k);
+    if (change) {
+      url += '&action=status&id=' + encodeURIComponent(change.id) +
+        '&status=' + encodeURIComponent(change.status);
+    }
+    fetch(url, { method: 'GET' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d) throw new Error('пусто');
+        if (d.locked) { lock('Ключ не подошёл. Попробуйте ещё раз.'); return; }
+        if (!d.items) throw new Error('пусто');
+        render(d);
+      })
+      .catch(function () {
+        root.innerHTML = '<p class="crm-empty">Не получилось связаться с процессом. Проверьте, что он включён в n8n.</p>' +
+          '<div class="crm-gate"><button type="button" class="crm-btn" id="crm-reload">Повторить</button></div>';
+      });
+  }
+
+  // Слушаем корень: карточки перерисовываются целиком, поэтому вешать
+  // обработчики на каждую кнопку пришлось бы после каждой перерисовки.
+  root.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null;
+    if (!b) return;
+    if (b.id === 'crm-reload') { load(null); return; }
+    if (b.id === 'crm-unlock') {
+      var f = document.getElementById('crm-key');
+      if (f && f.value.trim()) { setKey(f.value.trim()); load(null); }
+      return;
+    }
+    if (b.dataset && b.dataset.status) load({ id: b.dataset.id, status: b.dataset.status });
+  });
+  root.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target.id === 'crm-key') {
+      e.preventDefault();
+      var u = document.getElementById('crm-unlock');
+      if (u) u.click();
+    }
+  });
+
+  var opened = false;
+  function sync() {
+    if (location.hash !== '#crm') return;
+    section.hidden = false;
+    if (!opened) { opened = true; load(null); }
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  window.addEventListener('hashchange', sync);
+  sync();
+})();
