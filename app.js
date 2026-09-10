@@ -1,0 +1,405 @@
+/* Юридический навигатор — логика лендинга.
+ * Ассистент, каталог подсказок, поле «прислать на почту» и уведомление в n8n.
+ */
+(function () {
+  'use strict';
+
+  // ================================================================
+  // НАСТРОЙКА — три адреса, всё остальное работает само
+  // ================================================================
+
+  // Ссылка на бота. После /newapp в BotFather сюда можно поставить прямую
+  // ссылку вида https://t.me/<bot>/<short_name>?startapp=site — тогда мини-апп
+  // откроется одним касанием, без промежуточного /start.
+  var TG_LINK = 'https://t.me/tg_crm_vibecoder_bot?start=site';
+
+  // Production Chat URL основного workflow. Пусто — работает демо-режим на
+  // записанных ответах, каждый из которых прошёл настоящие Code-ноды n8n.
+  var CHAT_URL = '';
+
+  // Production URL workflow «уведомление на почту». Пусто — письма не шлются.
+  var NOTIFY_URL = '';
+
+  var LIMIT_PER_HOUR = 15;
+  var MAX_LEN = 500;
+
+  // ================================================================
+
+  function $(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function el(html) {
+    var t = document.createElement('template');
+    t.innerHTML = String(html).trim();
+    return t.content.firstElementChild;
+  }
+  function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+  ['tg-top', 'tg-hero', 'tg-mini', 'tg-final'].forEach(function (id) {
+    var a = $(id);
+    if (a) { a.href = TG_LINK; a.target = '_blank'; a.rel = 'noopener'; }
+  });
+
+  // ---------- появление при прокрутке ----------
+  var revs = document.querySelectorAll('.rev');
+  if (window.IntersectionObserver) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    [].forEach.call(revs, function (n) { io.observe(n); });
+  } else {
+    [].forEach.call(revs, function (n) { n.classList.add('in'); });
+  }
+
+  var top = $('top');
+  window.addEventListener('scroll', function () {
+    if (top) top.classList.toggle('stuck', window.scrollY > 24);
+  }, { passive: true });
+
+  // ---------- состояние ----------
+  var thread = $('thread');
+  var form = $('form');
+  var input = $('input');
+  var sendBtn = $('send');
+  var modeLabel = $('mode');
+  var invite = thread.querySelector('.invite');
+  var chipsBox = $('chips');
+  var busy = false;
+  var demoData = null;
+  var catalogue = null;
+  var asked = {};
+  var sessionId = 'site-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+  var CHIPS = [
+    { q: 'До какой суммы договор можно подписать без визы юр. отдела?', n: 'ветка А — знает и отвечает' },
+    { q: 'Подготовь запрос на согласование договора с поставщиком на 8000 евро', n: 'ветка Б — нужно подтверждение' },
+    { q: 'Можно ли мне подписать NDA по законам штата Калифорния?', n: 'ветка В — этого в документе нет' },
+    { q: 'Что делать при получении претензии?', n: 'чеклист из приложения Б' }
+  ];
+  var BRANCH = {
+    A: { t: 'a', l: 'А', n: 'прямой ответ' },
+    B: { t: 'b', l: 'Б', n: 'требуется подтверждение' },
+    V: { t: 'v', l: 'В', n: 'передано юристу' }
+  };
+
+  function toEnd() {
+    requestAnimationFrame(function () { thread.scrollTop = thread.scrollHeight; });
+  }
+
+  // ---------- лимит с одного браузера ----------
+  function quotaLeft() {
+    try {
+      var r = JSON.parse(localStorage.getItem('ln-quota') || '{}');
+      if (r.hour !== new Date().getHours()) return LIMIT_PER_HOUR;
+      return Math.max(0, LIMIT_PER_HOUR - (r.used || 0));
+    } catch (e) { return LIMIT_PER_HOUR; }
+  }
+  function quotaUse() {
+    try {
+      var h = new Date().getHours();
+      var r = JSON.parse(localStorage.getItem('ln-quota') || '{}');
+      localStorage.setItem('ln-quota', JSON.stringify({ hour: h, used: (r.hour === h ? (r.used || 0) : 0) + 1 }));
+    } catch (e) {}
+  }
+
+  // ---------- визуализация ----------
+  function visual(v) {
+    if (!v || !v.type || v.type === 'none') return '';
+    try {
+      if (v.type === 'threshold_bar') {
+        var items = v.items || [];
+        return '<div class="vis"><p class="vis-t"><span>' + esc(v.title) + '</span><span>' + esc(v.source_ref) + ' · стр. ' + esc(v.source_page) + '</span></p>' +
+          (v.marker ? '<div class="mark">' + esc(v.marker.label) + '</div>' : '') +
+          '<div class="ladder">' + items.map(function (i) {
+            return '<div class="' + (i.label === v.highlight ? 'on' : 'off') + '"></div>';
+          }).join('') + '</div>' +
+          '<div class="scale">' + items.map(function (i) {
+            return '<span>' + esc(i.max == null ? '∞' : money(i.max)) + '</span>';
+          }).join('') + '</div>' +
+          items.map(function (i) {
+            return '<div class="tier' + (i.label === v.highlight ? ' on' : '') + '">' +
+              '<b>' + esc(i.label) + '</b><span>' + esc(i.signer) + '</span>' +
+              '<span>Виза: ' + esc(i.visa) + '</span></div>';
+          }).join('') + '</div>';
+      }
+      if (v.type === 'table') {
+        return '<div class="vis"><p class="vis-t"><span>' + esc(v.title) + '</span><span>' + esc(v.source_ref) + ' · стр. ' + esc(v.source_page) + '</span></p>' +
+          '<div class="tw"><table><thead><tr>' +
+          (v.head || []).map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') +
+          '</tr></thead><tbody>' +
+          (v.rows || []).map(function (r) {
+            return '<tr' + (v.highlight && r[0] === v.highlight ? ' class="on"' : '') + '>' +
+              r.map(function (c) { return '<td>' + esc(c) + '</td>'; }).join('') + '</tr>';
+          }).join('') + '</tbody></table></div></div>';
+      }
+      if (v.type === 'checklist') {
+        return '<div class="vis"><p class="vis-t"><span>' + esc(v.title) + '</span><span>' + esc(v.source_ref) + ' · стр. ' + esc(v.source_page) + '</span></p>' +
+          (v.items || []).map(function (i) { return '<div class="tier"><b>' + esc(i) + '</b></div>'; }).join('') + '</div>';
+      }
+    } catch (e) { return ''; }
+    return '';
+  }
+
+  // ---------- уведомление на почту ----------
+  // Вызывается ПОСЛЕ показа ответа и результата не ждёт: письмо не должно
+  // задерживать интерфейс. Ошибку глотаем — почта не критична для ответа.
+  function notify(payload) {
+    if (!NOTIFY_URL) return Promise.resolve(false);
+    return fetch(NOTIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.ok; }).catch(function () { return false; });
+  }
+
+  function mailRow(data) {
+    var row = el('<div class="mailrow">' +
+      '<input type="email" placeholder="Прислать ответ на почту" autocomplete="email">' +
+      '<button type="button">Отправить</button>' +
+      '<p class="hint">Письмо придёт один раз, на указанный адрес. Ассистент не даёт юридических консультаций.</p>' +
+      '</div>');
+    var field = row.querySelector('input');
+    var btn = row.querySelector('button');
+
+    btn.addEventListener('click', function () {
+      var mail = field.value.trim().toLowerCase();
+      if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(mail)) {
+        field.focus();
+        field.style.borderColor = 'var(--v)';
+        return;
+      }
+      field.style.borderColor = '';
+      btn.disabled = true;
+      btn.textContent = 'Отправляем…';
+
+      if (!NOTIFY_URL) {
+        row.innerHTML = '<p class="hint">Почтовый процесс ещё не подключён: впишите его Production URL в константу NOTIFY_URL. Всё остальное готово.</p>';
+        return;
+      }
+      notify({
+        question: data.question, answer: data.answer, branch: data.branch,
+        source: data.source, channel: 'сайт', confidence: data.confidence,
+        session: sessionId, reply_to: mail
+      }).then(function (ok) {
+        row.innerHTML = ok
+          ? '<p class="done">Ответ отправлен на ' + esc(mail) + '.</p>'
+          : '<p class="hint">Не удалось отправить письмо. Попробуйте ещё раз позже.</p>';
+      });
+    });
+    return row;
+  }
+
+  function addAnswer(d) {
+    var b = BRANCH[d.branch] || { t: 'a', l: '·', n: 'ответ' };
+    var html = '<div class="ans"><div class="ans-head"><span class="tag2 ' + b.t + '">' + esc(b.l) + '</span>' + esc(b.n) +
+      (typeof d.confidence === 'number' ? ' · ' + d.confidence.toFixed(2) : '') + '</div>' +
+      '<div class="ans-body">' + esc(d.output || d.answer || '') + '</div>';
+    if (d.source_summary) html += '<div class="cite">' + esc(d.source_summary) + '</div>';
+    html += visual(d.visual);
+    if (d.status === 'pending_approval') {
+      html += '<div class="notice wait">Письмо не отправлено. Решение принимает человек в Telegram.</div>';
+    } else if (d.status === 'escalated' && d.reason_no_answer) {
+      html += '<div class="notice esc">' + esc(d.reason_no_answer) + '</div>';
+    }
+
+    var card = el(html + '</div>');
+    card.appendChild(mailRow({
+      question: d.__q || '', answer: d.answer || d.output || '',
+      branch: d.branch, source: d.source_summary, confidence: d.confidence
+    }));
+    thread.appendChild(card);
+    toEnd();
+
+    var ref = (d.source_summary || '').match(/§\s*\d{1,2}(?:\.\d)?|Приложение\s+[АБ](?:\.\d)?/);
+    renderFollowUps(ref ? ref[0].replace(/\s+/g, ' ').replace('§ ', '§') : null);
+  }
+
+  function addError(t) {
+    thread.appendChild(el('<div class="notice err">' + esc(t) + '</div>'));
+    toEnd();
+  }
+
+  // ---------- каталог подсказок ----------
+  function normalizeQ(q) { return String(q).toLowerCase().replace(/[^а-яёa-z0-9]+/g, ' ').trim(); }
+
+  function searchCatalogue(query, limit) {
+    if (!catalogue) return [];
+    var words = normalizeQ(query).split(' ').filter(function (w) { return w.length >= 3; });
+    if (!words.length) return [];
+    var hits = [];
+    catalogue.items.forEach(function (it) {
+      if (asked[it.q]) return;
+      var ok = words.every(function (w) { return it.kw.indexOf(w) !== -1; });
+      if (ok) hits.push(it);
+    });
+    return hits.slice(0, limit || 6);
+  }
+
+  function followUps(ref, limit) {
+    if (!catalogue) return [];
+    var seen = {}, near = [], far = [];
+    (catalogue.byRef[ref] || []).forEach(function (i) {
+      var it = catalogue.items[i];
+      if (it && !asked[it.q] && !seen[it.q] && near.length < 2) { seen[it.q] = 1; near.push(it); }
+    });
+    var refs = Object.keys(catalogue.byRef).filter(function (r) { return r !== ref; });
+    for (var i = refs.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = refs[i]; refs[i] = refs[j]; refs[j] = t;
+    }
+    for (var r = 0; r < refs.length && far.length < 3; r++) {
+      var idxs = catalogue.byRef[refs[r]];
+      var c = catalogue.items[idxs[Math.floor(Math.random() * idxs.length)]];
+      if (c && !asked[c.q] && !seen[c.q]) { seen[c.q] = 1; far.push(c); }
+    }
+    return near.concat(far).slice(0, limit || 3);
+  }
+
+  function renderFollowUps(ref) {
+    var list = followUps(ref, 3);
+    if (!list.length) return;
+    var box = el('<div class="followups"><p class="fu-title">Спросить дальше</p><div class="fu-list"></div></div>');
+    var wrap = box.querySelector('.fu-list');
+    list.forEach(function (it) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = esc(it.q) + '<i>' + esc(it.ref) + '</i>';
+      b.addEventListener('click', function () { ask(it.q); });
+      wrap.appendChild(b);
+    });
+    thread.appendChild(box);
+    toEnd();
+  }
+
+  function renderSuggest(query) {
+    var box = $('suggest');
+    if (!box) return;
+    var hits = query.trim().length >= 2 ? searchCatalogue(query, 6) : [];
+    if (!hits.length) { box.hidden = true; box.innerHTML = ''; return; }
+    box.innerHTML = '<p class="sg-title">Подсказки по справочнику · ' + hits.length + '</p>';
+    hits.forEach(function (it) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = esc(it.q) + '<i>' + esc(it.ref) + '</i>';
+      b.addEventListener('click', function () {
+        input.value = ''; box.hidden = true; ask(it.q);
+      });
+      box.appendChild(b);
+    });
+    box.hidden = false;
+  }
+
+  // ---------- источники ответов ----------
+  function loadDemo() {
+    if (demoData) return Promise.resolve(demoData);
+    return fetch('demo-responses.json').then(function (r) { return r.json(); })
+      .then(function (d) { demoData = d; return d; });
+  }
+  function fromDemo(q) {
+    return loadDemo().then(function (d) {
+      for (var i = 0; i < d.items.length; i++) {
+        if (new RegExp(d.items[i].match, 'i').test(q)) return d.items[i].response;
+      }
+      if (catalogue) {
+        var norm = normalizeQ(q);
+        for (var k = 0; k < catalogue.items.length; k++) {
+          if (normalizeQ(catalogue.items[k].q) === norm) return catalogue.items[k].response;
+        }
+        var f = searchCatalogue(q, 1);
+        if (f.length) return f[0].response;
+      }
+      return d.fallback;
+    });
+  }
+  function fromN8n(q) {
+    return fetch(CHAT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sendMessage', sessionId: sessionId, chatInput: q })
+    }).then(function (r) {
+      var type = r.headers.get('content-type') || '';
+      if (type.indexOf('application/json') === -1) throw new Error('not json');
+      return r.json();
+    });
+  }
+
+  function ask(q) {
+    if (busy) return;
+    q = String(q || '').trim();
+    if (!q) return;
+    if (q.length > MAX_LEN) { addError('Вопрос длиннее ' + MAX_LEN + ' символов.'); return; }
+    if (CHAT_URL && quotaLeft() <= 0) {
+      addError('На этот час вопросов с этого браузера достаточно. Продолжите в Telegram — там ограничений нет.');
+      return;
+    }
+
+    busy = true;
+    sendBtn.disabled = true;
+    asked[q] = 1;
+    if (invite) { invite.remove(); invite = null; }
+    if (chipsBox) { chipsBox.remove(); chipsBox = null; }
+    var sg = $('suggest'); if (sg) { sg.hidden = true; sg.innerHTML = ''; }
+
+    thread.appendChild(el('<div class="bubble">' + esc(q) + '</div>'));
+    var pending = el('<div class="ans"><div class="dots"><i></i><i></i><i></i></div></div>');
+    thread.appendChild(pending);
+    toEnd();
+
+    var run;
+    if (CHAT_URL) {
+      quotaUse();
+      run = fromN8n(q).catch(function () { return fromDemo(q); });
+    } else {
+      run = fromDemo(q);
+    }
+
+    run.then(function (d) {
+      pending.remove();
+      if (!d) { addError('Не удалось получить ответ.'); return; }
+      if (d.error) { addError(d.error); return; }
+      d.__q = q;
+      addAnswer(d);
+      // Уведомление вам уходит по каждому вопросу, независимо от почты клиента.
+      notify({
+        question: q, answer: d.answer || d.output || '', branch: d.branch,
+        source: d.source_summary, channel: 'сайт', confidence: d.confidence,
+        session: sessionId, reply_to: ''
+      });
+    }).catch(function () {
+      pending.remove();
+      addError('Ассистент недоступен. Попробуйте в Telegram.');
+    }).finally(function () {
+      busy = false;
+      sendBtn.disabled = false;
+    });
+  }
+
+  CHIPS.forEach(function (c) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = esc(c.q) + '<i>' + esc(c.n) + '</i>';
+    b.addEventListener('click', function () { ask(c.q); });
+    chipsBox.appendChild(b);
+  });
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = input.value;
+    input.value = '';
+    ask(v);
+  });
+  input.addEventListener('input', function () { renderSuggest(input.value); });
+  input.addEventListener('focus', function () { renderSuggest(input.value); });
+  input.addEventListener('blur', function () {
+    setTimeout(function () { var b = $('suggest'); if (b) b.hidden = true; }, 180);
+  });
+
+  fetch('catalogue.json').then(function (r) { return r.json(); })
+    .then(function (c) { catalogue = c; })
+    .catch(function () { catalogue = null; });
+
+  if (modeLabel) modeLabel.textContent = CHAT_URL ? 'живой' : 'демо';
+})();
