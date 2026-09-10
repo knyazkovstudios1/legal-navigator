@@ -15,10 +15,12 @@
 
   // Production Chat URL основного workflow. Пусто — работает демо-режим на
   // записанных ответах, каждый из которых прошёл настоящие Code-ноды n8n.
-  var CHAT_URL = '';
+  var CHAT_URL = 'https://n8n-production-5b17.up.railway.app/webhook/00003039-167e-4800-a800-00007f790800/chat';
 
   // Production URL workflow «уведомление на почту». Пусто — письма не шлются.
-  var NOTIFY_URL = 'https://n8n-production-5b17.up.railway.app/webhook/legal-notify';
+  // Письмо вам и автоответ клиенту отправляет сам процесс после каждого
+  // ответа, поэтому отдельный вызов с сайта больше не нужен.
+  var NOTIFY_URL = '';
 
   var LIMIT_PER_HOUR = 15;
   var MAX_LEN = 500;
@@ -179,12 +181,27 @@
   // ---------- уведомление на почту ----------
   // Вызывается ПОСЛЕ показа ответа и результата не ждёт: письмо не должно
   // задерживать интерфейс. Ошибку глотаем — почта не критична для ответа.
+  // Письмо содержит ровно тот ответ, который человек прочитал на экране:
+  // отправляем его вместе с запросом и флагом mail_only. Переспрашивать агента
+  // нельзя — он может ответить иначе, и в письме окажется не то.
   function notify(payload) {
-    if (!NOTIFY_URL) return Promise.resolve(false);
-    return fetch(NOTIFY_URL, {
+    if (!CHAT_URL) return Promise.resolve(false);
+    return fetch(CHAT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        action: 'sendMessage',
+        mail_only: true,
+        chatInput: payload.question,
+        question: payload.question,
+        answer: payload.answer,
+        branch: payload.branch,
+        source: payload.source,
+        confidence: payload.confidence,
+        sessionId: payload.session,
+        channel: 'сайт',
+        reply_to: payload.reply_to
+      })
     }).then(function (r) { return r.ok; }).catch(function () { return false; });
   }
 
@@ -208,19 +225,15 @@
       btn.disabled = true;
       btn.textContent = 'Отправляем…';
 
-      if (!NOTIFY_URL) {
-        row.innerHTML = '<p class="hint">Почтовый процесс ещё не подключён: впишите его Production URL в константу NOTIFY_URL. Всё остальное готово.</p>';
-        return;
-      }
       notify({
         question: data.question, answer: data.answer, branch: data.branch,
         source: data.source, channel: 'сайт', confidence: data.confidence,
         session: sessionId, reply_to: mail
       }).then(function (ok) {
-        // Вебхук отвечает 202 «принято» ДО отправки письма, поэтому обещать
-        // доставку нельзя — только приём заявки.
+        // Процесс подтверждает приём до фактической отправки письма,
+        // поэтому обещаем отправку, а не доставку.
         row.innerHTML = ok
-          ? '<p class="done">Заявка принята — ответ придёт на ' + esc(mail) + '.</p>'
+          ? '<p class="done">Готово — ответ уйдёт на ' + esc(mail) + '.</p>'
           : '<p class="hint">Не удалось передать заявку. Попробуйте ещё раз позже.</p>';
       });
     });
