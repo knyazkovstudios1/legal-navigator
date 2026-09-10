@@ -164,6 +164,10 @@ section.alt{background:linear-gradient(180deg,transparent,var(--deep) 12%,var(--
 @keyframes pl{0%{box-shadow:0 0 0 0 rgba(47,208,189,.5)}70%{box-shadow:0 0 0 9px rgba(47,208,189,0)}100%{box-shadow:0 0 0 0 rgba(47,208,189,0)}}
 .mode{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--faint)}
 .thread{padding:20px;overflow-y:auto;display:flex;flex-direction:column;gap:15px;flex:1;min-height:320px}
+/* Без этого карточка ответа схлопывается: overflow:hidden делает её
+   скролл-контейнером, min-height:auto резолвится в 0, и flex-shrink сжимает
+   её почти до заголовка — цитата, график и поле почты уезжают за границу. */
+.thread > *{flex:none}
 .invite{font-size:14.5px;color:var(--mute);margin:0}
 .invite b{color:var(--ink)}
 .chips{display:flex;flex-direction:column;gap:8px}
@@ -287,6 +291,7 @@ section.alt{background:linear-gradient(180deg,transparent,var(--deep) 12%,var(--
 footer{border-top:1px solid var(--line);padding:30px 0 54px;font-size:13px;color:var(--faint)}
 footer .wrap{display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between}
 </style>
+<noscript><style>.rev{opacity:1;transform:none}</style></noscript>
 </head>
 <body>
 
@@ -437,8 +442,11 @@ footer .wrap{display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between}
   </div>
 </footer>
 
+<!-- app.js идёт ПЕРВЫМ: defer-скрипты выполняются строго по порядку разметки,
+     а именно app.js снимает opacity:0 со всех блоков .rev. Если поставить его
+     после библиотеки с CDN и та зависнет, страница останется пустой. -->
+<script src="app.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
 <script src="scene.js" defer></script>
-<script src="app.js" defer></script>
 </body>
 </html>

@@ -18,7 +18,7 @@
   var CHAT_URL = '';
 
   // Production URL workflow «уведомление на почту». Пусто — письма не шлются.
-  var NOTIFY_URL = '';
+  var NOTIFY_URL = 'https://n8n-production-5b17.up.railway.app/webhook/legal-notify';
 
   var LIMIT_PER_HOUR = 15;
   var MAX_LEN = 500;
@@ -85,9 +85,15 @@
     V: { t: 'v', l: 'В', n: 'передано юристу' }
   };
 
-  function toEnd() {
-    requestAnimationFrame(function () { thread.scrollTop = thread.scrollHeight; });
+  // Прокручиваем к НАЧАЛУ нового блока, а не в самый низ: иначе длинный ответ
+  // с графиком открывается на своём хвосте и текста не видно.
+  function toBlock(node) {
+    requestAnimationFrame(function () {
+      if (node && node.offsetTop) thread.scrollTop = Math.max(node.offsetTop - 14, 0);
+      else thread.scrollTop = thread.scrollHeight;
+    });
   }
+  function toEnd() { toBlock(null); }
 
   // ---------- лимит с одного браузера ----------
   function quotaLeft() {
@@ -184,9 +190,11 @@
         source: data.source, channel: 'сайт', confidence: data.confidence,
         session: sessionId, reply_to: mail
       }).then(function (ok) {
+        // Вебхук отвечает 202 «принято» ДО отправки письма, поэтому обещать
+        // доставку нельзя — только приём заявки.
         row.innerHTML = ok
-          ? '<p class="done">Ответ отправлен на ' + esc(mail) + '.</p>'
-          : '<p class="hint">Не удалось отправить письмо. Попробуйте ещё раз позже.</p>';
+          ? '<p class="done">Заявка принята — ответ придёт на ' + esc(mail) + '.</p>'
+          : '<p class="hint">Не удалось передать заявку. Попробуйте ещё раз позже.</p>';
       });
     });
     return row;
@@ -211,7 +219,7 @@
       branch: d.branch, source: d.source_summary, confidence: d.confidence
     }));
     thread.appendChild(card);
-    toEnd();
+    toBlock(card);
 
     var ref = (d.source_summary || '').match(/§\s*\d{1,2}(?:\.\d)?|Приложение\s+[АБ](?:\.\d)?/);
     renderFollowUps(ref ? ref[0].replace(/\s+/g, ' ').replace('§ ', '§') : null);
