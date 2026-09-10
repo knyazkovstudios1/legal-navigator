@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Логика Юридического навигатора: путь вопроса от входа до письма, три ветки поведения, guardrail.">
+<style>html,body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Как работает навигатор</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F1F4F7;
+    --surface:    #FFFFFF;
+    --surface-2:  #E8EDF2;
+    --ink:        #16202B;
+    --ink-2:      #56687A;
+    --rule:       #CFD9E2;
+    --accent:     #1D4E8F;
+    --accent-ink: #143A6B;
+    --accent-bg:  #E2EBF6;
+    --a:          #1F6B5B;
+    --a-bg:       #E1F0EB;
+    --b:          #8A5A12;
+    --b-bg:       #F6ECD8;
+    --v:          #9E3040;
+    --v-bg:       #F7E4E7;
+
+    --sans: "IBM Plex Sans Condensed", "Segoe UI", system-ui, sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#0E161E; --surface:#16212C; --surface-2:#1D2A36;
+      --ink:#E6ECF2; --ink-2:#8FA1B2; --rule:#26343F;
+      --accent:#7FB2EA; --accent-ink:#A8CBF3; --accent-bg:#17293C;
+      --a:#5FC5AE; --a-bg:#122C27;
+      --b:#D9AC63; --b-bg:#2A2318;
+      --v:#E58694; --v-bg:#2E191D;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0E161E; --surface:#16212C; --surface-2:#1D2A36;
+    --ink:#E6ECF2; --ink-2:#8FA1B2; --rule:#26343F;
+    --accent:#7FB2EA; --accent-ink:#A8CBF3; --accent-bg:#17293C;
+    --a:#5FC5AE; --a-bg:#122C27;
+    --b:#D9AC63; --b-bg:#2A2318;
+    --v:#E58694; --v-bg:#2E191D;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--serif); font-size: 17px; line-height: 1.6;
+    margin: 0; -webkit-text-size-adjust: 100%;
+  }
+  .wrap {
+    max-width: 44rem; margin: 0 auto; padding: 2.4rem 1.15rem 4.5rem;
+    display: flex; flex-direction: column; gap: 2.4rem;
+  }
+
+  .eyebrow {
+    font-family: var(--sans); font-size: .78rem; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2);
+    margin: 0 0 .5rem;
+  }
+  h1 {
+    font-family: var(--sans); font-weight: 700;
+    font-size: clamp(2rem, 7vw, 2.8rem); line-height: 1.05;
+    letter-spacing: -.015em; text-wrap: balance; margin: 0 0 .6rem;
+  }
+  .lede { margin: 0; color: var(--ink-2); }
+
+  h2 {
+    font-family: var(--sans); font-weight: 700; font-size: 1.05rem;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2);
+    margin: 0 0 1.1rem; padding-bottom: .45rem; border-bottom: 1px solid var(--rule);
+  }
+  p { margin: 0 0 .9rem; }
+  p:last-child { margin-bottom: 0; }
+
+  code {
+    font-family: var(--mono); font-size: .86em;
+    background: var(--surface-2); padding: .08em .35em; border-radius: 2px;
+  }
+
+  /* ---------- путь вопроса: нумерация здесь настоящая ---------- */
+  .flow { display: flex; flex-direction: column; }
+  .step {
+    display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 1rem;
+    padding: 1rem 0; border-top: 1px solid var(--rule); position: relative;
+  }
+  .step:first-child { border-top: 0; }
+  .step-n {
+    font-family: var(--mono); font-weight: 600; font-size: 1rem;
+    color: var(--accent); padding-top: .12rem; font-variant-numeric: tabular-nums;
+  }
+  .step h3 {
+    font-family: var(--sans); font-weight: 700; font-size: 1.16rem;
+    margin: 0 0 .35rem; letter-spacing: -.005em;
+  }
+  .step p { font-size: .97rem; margin: 0 0 .5rem; }
+  .step p:last-child { margin-bottom: 0; }
+  .node {
+    font-family: var(--mono); font-size: .8rem; color: var(--ink-2);
+    background: var(--surface-2); border-radius: 3px; padding: .1em .4em;
+  }
+
+  /* ---------- три исхода ---------- */
+  .outcomes { display: grid; gap: .9rem; grid-template-columns: 1fr; }
+  @media (min-width: 40rem) { .outcomes { grid-template-columns: repeat(3, 1fr); } }
+  .out {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 4px; padding: .95rem 1.05rem;
+    display: flex; flex-direction: column; gap: .45rem;
+  }
+  .out-tag {
+    font-family: var(--sans); font-weight: 700; font-size: .78rem;
+    letter-spacing: .06em; text-transform: uppercase;
+    align-self: flex-start; padding: .18rem .6rem; border-radius: 20px;
+  }
+  .out.a { border-left: 3px solid var(--a); }
+  .out.b { border-left: 3px solid var(--b); }
+  .out.v { border-left: 3px solid var(--v); }
+  .out.a .out-tag { background: var(--a-bg); color: var(--a); }
+  .out.b .out-tag { background: var(--b-bg); color: var(--b); }
+  .out.v .out-tag { background: var(--v-bg); color: var(--v); }
+  .out strong { font-family: var(--sans); font-size: 1.02rem; }
+  .out p { font-size: .92rem; margin: 0; color: var(--ink-2); }
+
+  /* ---------- таблица «где что живёт» ---------- */
+  .tw { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .6rem .8rem .6rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--sans); font-size: .76rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2);
+    white-space: nowrap;
+  }
+  td:first-child { font-family: var(--sans); font-weight: 600; white-space: nowrap; padding-right: 1.2rem; }
+
+  /* ---------- числа ---------- */
+  .nums { display: grid; gap: .8rem; grid-template-columns: repeat(2, 1fr); }
+  @media (min-width: 40rem) { .nums { grid-template-columns: repeat(4, 1fr); } }
+  .num { border-top: 2px solid var(--accent); padding-top: .55rem; }
+  .num b {
+    display: block; font-family: var(--mono); font-weight: 600;
+    font-size: 1.5rem; line-height: 1.1; font-variant-numeric: tabular-nums;
+  }
+  .num span { font-family: var(--sans); font-size: .82rem; color: var(--ink-2); }
+
+  .note {
+    background: var(--accent-bg); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    border-radius: 4px; padding: 1rem 1.15rem; font-size: .97rem;
+  }
+  .note b { font-family: var(--sans); }
+
+  ul { margin: 0; padding-left: 1.15rem; }
+  li { margin-bottom: .45rem; }
+  li:last-child { margin-bottom: 0; }
+
+  .foot {
+    font-family: var(--sans); font-size: .85rem; color: var(--ink-2);
+    border-top: 1px solid var(--rule); padding-top: 1rem; margin: 0;
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Проект 3 · AI Data System: Pipeline + RAG</p>
+    <h1>Как работает навигатор</h1>
+    <p class="lede">Короткая шпаргалка по логике: что происходит с вопросом от момента, когда его задали, до письма и записи в картотеке.</p>
+  </header>
+
+  <section>
+    <h2>В одном абзаце</h2>
+    <p>Есть корпоративное юридическое руководство Globex — 12 разделов и 12 таблиц. Сотрудники спрашивают по нему простое: до какой суммы можно подписать договор, кто визирует, что делать с претензией. Ассистент отвечает <b>только по этому документу</b> и обязан показать пункт, на котором основан ответ. Если прямого подтверждения в документе нет — не угадывает, а передаёт вопрос живому юристу.</p>
+    <p>Ключевая мысль для защиты: ценность не в том, что он отвечает, а в том, что он <b>умеет не отвечать</b>.</p>
+  </section>
+
+  <section>
+    <h2>Путь вопроса</h2>
+    <div class="flow">
+
+      <article class="step">
+        <div class="step-n">1</div>
+        <div>
+          <h3>Вопрос приходит на один вход</h3>
+          <p>Сайт, мини-апп в Telegram и панель чата внутри n8n стучатся в один и тот же адрес — <span class="node">Чат-триггер (единый вход)</span>. Отдельных процессов под каждый канал нет.</p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="step-n">2</div>
+        <div>
+          <h3>Разбор входа</h3>
+          <p>Единственное место, где читается запрос: <span class="node">Нормализация входа</span>. Достаёт из текста сумму договора, почту клиента, распознаёт просьбу построить график и подставляет адрес для уведомлений.</p>
+          <p>Сумма разбирается аккуратно: «5 000,50» — это пять тысяч и полтинник, а не пятьсот тысяч. Ошибка здесь означала бы неверного подписанта.</p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="step-n">3</div>
+        <div>
+          <h3>Развилка по типу запроса</h3>
+          <p>Нода <span class="node">Тип запроса</span> разводит на три маршрута — и это <b>не</b> ветки А/Б/В, их легко перепутать:</p>
+          <ul>
+            <li><b>Письмо по просьбе</b> — прислать на почту ответ, который человек уже прочитал. Агент не запускается вовсе.</li>
+            <li><b>Запрос графика</b> — «построй график сроков визирования». Уходит в свою ветку, к агенту тоже не идёт.</li>
+            <li><b>Обычный вопрос</b> — только этот путь доходит до агента и поиска по документу.</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="step-n">4</div>
+        <div>
+          <h3>Поиск по документу</h3>
+          <p>Вопрос превращается в вектор моделью <code>text-embedding-3-small</code> и ищется в Qdrant среди 67 фрагментов документа. Возвращаются 6 самых близких — это и есть RAG.</p>
+          <p>Фрагменты нарезаны по структуре документа, а не по длине: таблица никогда не рвётся посередине, иначе матрица полномочий теряет строки.</p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="step-n">5</div>
+        <div>
+          <h3>Агент отвечает структурой, а не текстом</h3>
+          <p>Модель возвращает не абзац, а объект: уверенность, ответ, основание, нужно ли действие. Это принципиально — по свободному тексту следующий шаг проверять было бы нечего.</p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="step-n">6</div>
+        <div>
+          <h3>Guardrail — три проверки кодом</h3>
+          <p>Нода <span class="node">Проверка обоснования</span> проверяет три вещи: поиск по базе действительно вызывался, названный раздел существует в документе, уверенность не ниже 0,7. Хоть одна не прошла — ответ обнуляется.</p>
+          <p>Проверяет <b>код, а не модель</b>. Модель не может уговорить сама себя.</p>
+        </div>
+      </article>
+
+      <article class="step">
+        <div class="step-n">7</div>
+        <div>
+          <h3>Одна из трёх веток</h3>
+          <p>Дальше <span class="node">Маршрутизатор А/Б/В</span> выбирает, чем всё закончится.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Три исхода</h2>
+    <div class="outcomes">
+      <div class="out a">
+        <span class="out-tag">Ветка А</span>
+        <strong>Знаю</strong>
+        <p>Отвечает сразу, со ссылкой на пункт и страницу. Никого не беспокоит.</p>
+      </div>
+      <div class="out b">
+        <span class="out-tag">Ветка Б</span>
+        <strong>Нужно действие</strong>
+        <p>Готовит черновик письма и ждёт вашего подтверждения в Telegram. Сам наружу ничего не отправляет.</p>
+      </div>
+      <div class="out v">
+        <span class="out-tag">Ветка В</span>
+        <strong>Не знаю</strong>
+        <p>Обнуляет ответ и передаёт вопрос юристу. Причина записывается.</p>
+      </div>
+    </div>
+    <p style="margin-top:1.2rem">Веток поведения ровно три — это и есть то, что оценивается. Но если спросят подробнее, стоит знать ещё две вещи.</p>
+    <p><b>У маршрутизатора есть запасной выход.</b> Если ветка почему-то не распозналась, запрос уходит в В — то есть в отказ. Неизвестное состояние трактуется как «не знаю», а не как «отвечу как получится».</p>
+    <p><b>Внутри ветки Б три исхода</b>, а не один: человек подтвердил — письмо ушло; отклонил — записано в журнал; не ответил вовремя — таймаут, тоже записан. Все три пишутся в картотеку.</p>
+  </section>
+
+  <section>
+    <h2>Что происходит после ответа</h2>
+    <p>Всё это выполняется <b>после</b> того, как человек уже увидел ответ на экране, — на скорость не влияет.</p>
+    <ul>
+      <li><b>Картотека пополняется всегда</b>, по любой ветке. Это журнал: сколько спросили, о чём, что ответили.</li>
+      <li><b>Письмо вам и карточка в Telegram — только по Б и В</b>, то есть только когда без человека не обойтись. По прямому ответу уведомлений нет: иначе почта приходила бы на каждый вопрос и перестала что-либо значить.</li>
+      <li><b>Автоответ клиенту</b> уходит независимо от ветки — если клиент сам оставил адрес. Это его просьба, а не ваш сигнал.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Откуда взялась база знаний</h2>
+    <p>Отдельная ветка процесса, запускается вручную: PDF руководства → нормализация в markdown с восстановлением сломанных таблиц → нарезка на 67 фрагментов по структуре → эмбеддинги → коллекция <code>knowledge_base_legal</code> в Qdrant, 1536 измерений, косинусная близость.</p>
+    <p>Ещё одна ветка прогоняет контрольные вопросы по базе до и после перенарезки и присылает сводку — это проверка, что поиск не сломался.</p>
+  </section>
+
+  <section>
+    <h2>Где что живёт</h2>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Где</th><th>Что там</th></tr></thead>
+        <tbody>
+          <tr><td>n8n</td><td>Вся логика: один процесс, 61 нода. Это и есть сдаваемая работа.</td></tr>
+          <tr><td>Лендинг</td><td>Ассистент, кнопка «прислать на почту», картотека заявок по адресу с <code>#crm</code>.</td></tr>
+          <tr><td>Мини-апп</td><td>Чат, калькулятор порога, квиз, весь документ офлайн, вкладка «Заявки».</td></tr>
+          <tr><td>Telegram</td><td>Подтверждение по ветке Б, сообщение юристу по В, карточки заявок.</td></tr>
+          <tr><td>Почта</td><td>Уведомление вам по Б и В, автоответ клиенту по его просьбе.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Числа</h2>
+    <div class="nums">
+      <div class="num"><b>67</b><span>фрагментов в базе</span></div>
+      <div class="num"><b>0,7</b><span>порог уверенности</span></div>
+      <div class="num"><b>6</b><span>фрагментов на вопрос</span></div>
+      <div class="num"><b>61</b><span>нода в процессе</span></div>
+      <div class="num"><b>12</b><span>разделов документа</span></div>
+      <div class="num"><b>12</b><span>таблиц</span></div>
+      <div class="num"><b>104</b><span>вопроса в квизе</span></div>
+      <div class="num"><b>93</b><span>готовые подсказки</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Если спросят про галлюцинации</h2>
+    <p>Ответ короткий: у модели просто нет места, где их взять.</p>
+    <ul>
+      <li>В текстовых ответах — guardrail: без ссылки на существующий раздел ответ наружу не выходит.</li>
+      <li>В графиках — модель выбирает <b>один идентификатор из закрытого списка в четыре таблицы</b> и не генерирует ни одного числа. Числа подставляет код из реестра, собранного из документа.</li>
+      <li>Всё, что уходит наружу, проходит через подтверждение человеком.</li>
+    </ul>
+  </section>
+
+  <section class="note">
+    <p><b>Осталось настроить одно.</b> В ноде «Нормализация входа» есть строка <code>DEFAULT_CHAT_ID</code> — впишите туда свой <code>chat_id</code> в Telegram (узнать: написать <code>@userinfobot</code>). Туда сходятся все уведомления без собственного адресата. Второе такое же место — нода «Отчёт до/после в Telegram».</p>
+    <p>После правки обязательно нажмите <b>Publish</b>: в новом n8n правки в редакторе не влияют на боевую версию, пока не опубликуете.</p>
+  </section>
+
+  <p class="foot">Оценивается один артефакт — процесс в n8n. Лендинг и мини-апп идут сверх задания.</p>
+
+</div>
+
+</body>
+</html>

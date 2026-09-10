@@ -548,6 +548,7 @@
     }).join('');
     return '<article class="crm-card">' +
       '<div class="crm-top"><span class="pill ' + st.key + '">' + st.label + '</span>' +
+      (r.needs_human ? '<span class="pill work">нужен человек</span>' : '') +
       '<span class="crm-id">№ ' + esc(r.id) + ' · ' + esc(r.channel || '') + '</span></div>' +
       '<p class="crm-q">' + esc(r.question) + '</p>' +
       '<p class="crm-a">' + esc(r.answer) + '</p>' +
@@ -558,16 +559,31 @@
       '</article>';
   }
 
+  // Показывать всё или только то, где нужен человек. Уведомления и так приходят
+  // только по веткам Б и В, но в журнале лежат все обращения — фильтр даёт
+  // увидеть ровно то, с чем надо что-то делать.
+  var onlyHuman = false;
+  var lastData = null;
+
   function render(d) {
+    lastData = d;
     if (!d.items.length) {
       root.innerHTML = '<p class="crm-empty">Пока пусто. Задайте вопрос ассистенту выше — заявка появится здесь.</p>';
       return;
     }
+    var items = onlyHuman ? d.items.filter(function (r) { return r.needs_human; }) : d.items;
+    var attention = d.items.filter(function (r) { return r.needs_human; }).length;
+
     root.innerHTML =
       '<div class="crm-head"><span class="crm-count">Всего ' + d.total +
-        ' · новых ' + d.counts.new + ' · в работе ' + d.counts.work + ' · закрыто ' + d.counts.done + '</span>' +
+        ' · новых ' + d.counts.new + ' · в работе ' + d.counts.work + ' · закрыто ' + d.counts.done +
+        ' · требуют внимания ' + attention + '</span>' +
+        '<button type="button" class="crm-btn" id="crm-filter">' +
+          (onlyHuman ? 'Показать все' : 'Только требующие внимания') + '</button>' +
         '<button type="button" class="crm-btn" id="crm-reload">Обновить</button></div>' +
-      '<div class="crm-list">' + d.items.map(card).join('') + '</div>';
+      (items.length
+        ? '<div class="crm-list">' + items.map(card).join('') + '</div>'
+        : '<p class="crm-empty">Обращений, требующих человека, нет. Все вопросы закрыты прямым ответом по документу.</p>');
   }
 
   function load(change) {
@@ -601,6 +617,7 @@
     var b = e.target.closest ? e.target.closest('button') : null;
     if (!b) return;
     if (b.id === 'crm-reload') { load(null); return; }
+    if (b.id === 'crm-filter') { onlyHuman = !onlyHuman; if (lastData) render(lastData); return; }
     if (b.id === 'crm-unlock') {
       var f = document.getElementById('crm-key');
       if (f && f.value.trim()) { setKey(f.value.trim()); load(null); }
