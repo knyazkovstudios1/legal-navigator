@@ -293,18 +293,61 @@
     return near.concat(far).slice(0, limit || 3);
   }
 
-  function renderFollowUps(ref) {
-    var list = followUps(ref, 3);
-    if (!list.length) return;
-    var box = el('<div class="followups"><p class="fu-title">Спросить дальше</p><div class="fu-list"></div></div>');
-    var wrap = box.querySelector('.fu-list');
-    list.forEach(function (it) {
+  // Лента листается пальцем сама; на десктопе добавляем перетаскивание мышью,
+  // иначе без горизонтального колеса до дальних карточек не добраться.
+  function makeDraggable(row) {
+    var down = false, startX = 0, startLeft = 0, moved = 0;
+    row.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'touch') return;   // на тач-экране работает нативно
+      down = true; moved = 0;
+      startX = e.clientX; startLeft = row.scrollLeft;
+      row.classList.add('dragging');
+    });
+    row.addEventListener('pointermove', function (e) {
+      if (!down) return;
+      var dx = e.clientX - startX;
+      moved = Math.max(moved, Math.abs(dx));
+      row.scrollLeft = startLeft - dx;
+    });
+    var stop = function () {
+      if (!down) return;
+      down = false;
+      row.classList.remove('dragging');
+      // После перетаскивания клик по карточке гасим, иначе уедет вопрос,
+      // который пользователь просто пролистывал.
+      if (moved > 6) {
+        row.addEventListener('click', function once(ev) {
+          ev.stopPropagation(); ev.preventDefault();
+          row.removeEventListener('click', once, true);
+        }, true);
+      }
+    };
+    row.addEventListener('pointerup', stop);
+    row.addEventListener('pointerleave', stop);
+    row.addEventListener('pointercancel', stop);
+  }
+
+  /** Собирает горизонтальную ленту карточек-подсказок. */
+  function buildRow(items) {
+    var row = document.createElement('div');
+    row.className = 'srow';
+    items.forEach(function (it) {
       var b = document.createElement('button');
       b.type = 'button';
       b.innerHTML = esc(it.q) + '<i>' + esc(it.ref) + '</i>';
       b.addEventListener('click', function () { ask(it.q); });
-      wrap.appendChild(b);
+      row.appendChild(b);
     });
+    makeDraggable(row);
+    return row;
+  }
+
+  function renderFollowUps(ref) {
+    var list = followUps(ref, 6);
+    if (!list.length) return;
+    var box = el('<div class="followups"><p class="fu-title">Спросить дальше' +
+      '<em>' + list.length + ' · листайте вбок</em></p></div>');
+    box.appendChild(buildRow(list));
     thread.appendChild(box);
     toEnd();
   }
@@ -312,9 +355,13 @@
   function renderSuggest(query) {
     var box = $('suggest');
     if (!box) return;
-    var hits = query.trim().length >= 2 ? searchCatalogue(query, 6) : [];
+    var hits = query.trim().length >= 2 ? searchCatalogue(query, 10) : [];
     if (!hits.length) { box.hidden = true; box.innerHTML = ''; return; }
-    box.innerHTML = '<p class="sg-title">Подсказки по справочнику · ' + hits.length + '</p>';
+
+    box.innerHTML = '<p class="sg-title">Подсказки по справочнику' +
+      '<em>найдено ' + hits.length + ' · листайте вбок</em></p>';
+    var row = document.createElement('div');
+    row.className = 'srow';
     hits.forEach(function (it) {
       var b = document.createElement('button');
       b.type = 'button';
@@ -322,8 +369,10 @@
       b.addEventListener('click', function () {
         input.value = ''; box.hidden = true; ask(it.q);
       });
-      box.appendChild(b);
+      row.appendChild(b);
     });
+    makeDraggable(row);
+    box.appendChild(row);
     box.hidden = false;
   }
 
@@ -419,6 +468,7 @@
     b.addEventListener('click', function () { ask(c.q); });
     chipsBox.appendChild(b);
   });
+  makeDraggable(chipsBox);
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();

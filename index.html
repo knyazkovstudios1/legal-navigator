@@ -170,19 +170,43 @@ section.alt{background:linear-gradient(180deg,transparent,var(--deep) 12%,var(--
 .thread > *{flex:none}
 .invite{font-size:14.5px;color:var(--mute);margin:0}
 .invite b{color:var(--ink)}
-.chips{display:flex;flex-direction:column;gap:8px}
-.chips button,.fu-list button,#suggest button{
-  text-align:left;background:var(--raised);border:1px solid var(--line);color:var(--ink);
-  border-radius:11px;padding:11px 15px;font-size:13.5px;cursor:pointer;line-height:1.42;
-  font-family:inherit;display:grid;gap:3px;transition:border-color .2s,transform .2s,background .2s;
+/* Подсказок много, и вертикальным столбцом они забивают экран и сливаются
+   с ответом. Поэтому — горизонтальная лента: на телефоне листается пальцем,
+   на десктопе колесом или перетаскиванием. Карточка обрезана по краю нарочно:
+   выглядывающая следующая показывает, что список продолжается. */
+.srow{
+  display:flex;gap:9px;overflow-x:auto;overflow-y:hidden;
+  scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;
+  padding:2px 2px 9px;margin:0 -2px;
+  scrollbar-width:thin;scrollbar-color:var(--line2) transparent;
+  overscroll-behavior-x:contain;cursor:grab;
 }
-.chips button:hover,.fu-list button:hover,#suggest button:hover{
-  border-color:var(--ask);transform:translateX(3px);background:var(--panel);
+.srow.dragging{cursor:grabbing;scroll-snap-type:none}
+.srow::-webkit-scrollbar{height:6px}
+.srow::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+.srow::-webkit-scrollbar-track{background:transparent}
+.srow button{
+  flex:0 0 auto;scroll-snap-align:start;
+  width:min(256px, 70vw);min-height:70px;
+  text-align:left;background:var(--void);border:1px solid var(--line);color:var(--soft);
+  border-radius:12px;padding:11px 14px;font-size:13px;cursor:pointer;line-height:1.4;
+  font-family:inherit;display:grid;gap:5px;align-content:start;
+  transition:border-color .2s,transform .2s,color .2s;
 }
-.chips i,.fu-list i,#suggest i{font-style:normal;font-size:11px;color:var(--faint)}
+.srow button:hover{border-color:var(--ask);color:var(--ink);transform:translateY(-2px)}
+.srow i{
+  font-style:normal;font-size:10.5px;color:var(--faint);
+  font-family:"JetBrains Mono",monospace;letter-spacing:.04em;
+}
 .bubble{align-self:flex-end;background:linear-gradient(135deg,var(--ask),var(--ask-deep));
   color:#04070E;font-size:14.5px;padding:10px 15px;border-radius:16px 16px 4px 16px;max-width:85%;font-weight:500}
-.ans{border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--raised)}
+/* Ответ — содержимое, подсказки — управление. Чтобы они не сливались,
+   ответ приподнят и помечен полосой, а подсказки утоплены в тёмный фон. */
+.ans{
+  border:1px solid var(--line2);border-left:3px solid var(--ask);
+  border-radius:4px 13px 13px 4px;overflow:hidden;background:var(--raised);
+  box-shadow:0 14px 34px -26px rgba(0,0,0,.95);
+}
 .ans-head{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);
   font-size:11.5px;color:var(--mute);font-family:"JetBrains Mono",monospace}
 .tag2{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;border:1px solid}
@@ -228,11 +252,13 @@ section.alt{background:linear-gradient(180deg,transparent,var(--deep) 12%,var(--
 .vis tr.on td{background:rgba(123,165,242,.07);color:var(--ink)}
 
 .followups{border-top:1px dashed var(--line2);padding-top:14px}
-.fu-title,.sg-title{font-size:10.5px;color:var(--faint);margin:0 0 9px;
-  text-transform:uppercase;letter-spacing:.12em;font-family:"JetBrains Mono",monospace}
-.fu-list{display:grid;gap:8px}
-#suggest{border-top:1px solid var(--line);background:var(--raised);padding:12px 18px;
-  display:grid;gap:8px;max-height:230px;overflow-y:auto;flex:none}
+.fu-title,.sg-title{
+  font-size:10.5px;color:var(--faint);margin:0 0 9px;
+  text-transform:uppercase;letter-spacing:.12em;font-family:"JetBrains Mono",monospace;
+  display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+}
+.fu-title em,.sg-title em{font-style:normal;text-transform:none;letter-spacing:0;opacity:.8}
+#suggest{border-top:1px solid var(--line);background:var(--panel);padding:12px 18px 4px;flex:none}
 
 .mailrow{border-top:1px solid var(--line);padding:12px 15px;display:flex;gap:9px;flex-wrap:wrap;align-items:center}
 .mailrow input{
@@ -335,7 +361,7 @@ footer .wrap{display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between}
       </div>
       <div class="thread" id="thread">
         <p class="invite"><b>С чего начать</b> — выберите вопрос или спросите своими словами.</p>
-        <div class="chips" id="chips"></div>
+        <div class="srow" id="chips"></div>
       </div>
       <div id="suggest" hidden></div>
       <form class="assist-foot" id="form" autocomplete="off">
