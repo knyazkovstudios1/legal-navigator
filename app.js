@@ -44,14 +44,41 @@
   });
 
   // ---------- появление при прокрутке ----------
+  // Анимация появления — украшение, но она держит opacity:0 на ВСЕЙ странице.
+  // Значит любая причина, по которой наблюдатель не сработает (вкладка открыта
+  // в фоне, страница не отрисована, экзотический браузер), оставит посетителя
+  // перед пустым экраном. Поэтому здесь три независимых способа показать
+  // содержимое, и достаточно любого одного.
   var revs = document.querySelectorAll('.rev');
+  function revealAll() {
+    [].forEach.call(revs, function (n) { n.classList.add('in'); });
+  }
+
   if (window.IntersectionObserver) {
     var io = new IntersectionObserver(function (es) {
-      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+      es.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
     }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
     [].forEach.call(revs, function (n) { io.observe(n); });
+
+    // Страховка 1: если через полторы секунды первый экран всё ещё невидим,
+    // наблюдатель не отработал — показываем всё без анимации.
+    setTimeout(function () {
+      var first = document.querySelector('.hero .rev');
+      if (first && !first.classList.contains('in')) revealAll();
+    }, 1500);
+
+    // Страховка 2: первая же прокрутка снимает вопрос окончательно.
+    window.addEventListener('scroll', function once() {
+      window.removeEventListener('scroll', once);
+      setTimeout(function () {
+        var vis = document.querySelectorAll('.rev.in').length;
+        if (vis < 3) revealAll();
+      }, 300);
+    }, { passive: true, once: true });
   } else {
-    [].forEach.call(revs, function (n) { n.classList.add('in'); });
+    revealAll();
   }
 
   var top = $('top');
